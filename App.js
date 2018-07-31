@@ -4,14 +4,21 @@ import {
   Text,
   View,
   Platform,
-  TouchableOpacity, // 1: TouchableOpacityを追加
+  TouchableOpacity,
 } from 'react-native';
+// 1: FileSystemとMailComposerを追加
 import {
   MapView,
   Permissions,
   Constants,
   Location,
+  FileSystem,
+  MailComposer,
 } from 'expo'
+// 2: turf/helpersからlineStringをインポート
+import {
+  lineString
+} from '@turf/helpers'
 
 export default class App extends React.Component {
 
@@ -21,9 +28,9 @@ export default class App extends React.Component {
       latitude: null,
       longitude: null,
       message: "位置情報取得中",
-      logs: [], // 2: GPSログを格納する領域
-      subscription: null, // 3: 位置情報の監視のID
-      status: 'stop', // 4: ログを取得中か停止しているか
+      logs: [],
+      subscription: null,
+      status: 'stop',
     }
   }
 
@@ -49,7 +56,6 @@ export default class App extends React.Component {
     this.setState({ latitude: location.coords.latitude, longitude: location.coords.longitude })
   }
 
-  // 5: GPSログの取得を開始する関数
   startLogging = async () => {
     if (this.state.subscription) {
       return
@@ -59,7 +65,6 @@ export default class App extends React.Component {
     this.setState({ subscription: subscription, status: 'logging'})
   }
 
-  // 6: GPSログの取得を停止する関数
   stopLogging = () => {
     if (this.state.subscription) {
       this.state.subscription.remove(this.loggingPosition)
@@ -67,25 +72,37 @@ export default class App extends React.Component {
     this.setState({ subscription: null, status: 'stop' })
   }
 
-  // 7: Location.watchPositionAsyncのコールバック関数
   loggingPosition = ({coords, timestamp}) => {
     if (coords.accuracy) {
-      // 8: stateに追加するため必ず配列は新しいものを作成する
       let logs = [...this.state.logs]
       logs.push({latitude: coords.latitude, longitude: coords.longitude})
       this.setState({logs: logs})
     }
   }
 
-  // 9: ログをメールで送るための関数。まだ未実装
-  sendEmail = () => {
+  // 3: asyncキーワードを追加
+  sendEmail = async () => {
+    if (this.state.status !== 'stop' || this.state.logs.length < 2) {
+      return
+    }
+    const logs = [...this.state.logs]
+    // 4: GeoJSON形式に変換して文字列にする
+    const locations = logs.map(data => [data.longitude, data.latitude])
+    const geojson = JSON.stringify(lineString(locations))
+    // 5: キャッシュディレクトリにファイルを書き込む
+    const uri = FileSystem.cacheDirectory + 'gpslog.geojson'
+    await FileSystem.writeAsStringAsync(uri, geojson)
+    // 6: スマートフォンのメール送信画面を起動
+    const status = await MailComposer.composeAsync({attachments: [uri]})
+    if (status === 'sent') {
+      console.log('sent mail')
+    }
   }
 
   render() {
     if (this.state.latitude && this.state.longitude) {
       return (
         <View style={styles.container}>
-          { /* 10: ボタンを配置 */ }
           <View style={styles.buttonContainer}>
             <TouchableOpacity onPress={this.startLogging}>
               <Text>Start</Text>
@@ -108,7 +125,6 @@ export default class App extends React.Component {
             showsUserLocation={true}
           >
             {
-              // 11: ログが二個以上あれば画面上に線として描画
               this.state.logs.length > 1 ?
                 <MapView.Polyline
                   coordinates={this.state.logs}
@@ -135,7 +151,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     justifyContent: 'flex-start',
   },
-  // 12: ボタンの配置用のスタイルを追加
   buttonContainer: {
     height: 100,
     flexDirection: 'row',
